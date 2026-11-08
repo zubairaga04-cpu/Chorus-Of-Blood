@@ -1,0 +1,2437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SUB-LEVEL 9: THE CHORUS OF FLESH</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blood: #990f0f;
+            --phosphor: #4ade80;
+            --amber: #f59e0b;
+        }
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030304;
+            font-family: 'Share Tech Mono', monospace;
+            color: #d4d4d8;
+        }
+        #game-canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Post-processing CRT & Horror Overlays */
+        .vignette-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle at center, transparent 42%, rgba(0, 0, 0, 0.72) 82%, rgba(0, 0, 0, 0.96) 100%);
+            z-index: 10;
+            transition: box-shadow 0.25s ease;
+        }
+        .blood-pulse {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle at center, transparent 35%, rgba(150, 0, 0, 0.0) 100%);
+            z-index: 11;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .scanlines {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 2px,
+                rgba(0, 0, 0, 0.22) 3px,
+                rgba(0, 0, 0, 0.22) 4px
+            );
+            z-index: 12;
+            opacity: 0.7;
+        }
+        #grain-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 13;
+            opacity: 0.065;
+            mix-blend-mode: screen;
+        }
+
+        /* Glitch title animation */
+        .horror-title {
+            font-family: 'Cinzel', serif;
+            text-shadow: 0 0 18px rgba(185, 28, 28, 0.85), -2px 0 #ef4444, 2px 0 #1e3a8a;
+            letter-spacing: 0.14em;
+        }
+
+        /* Custom HUD styling */
+        .hud-panel {
+            background: rgba(8, 10, 12, 0.78);
+            border: 1px solid rgba(120, 130, 140, 0.25);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 12px rgba(20, 25, 30, 0.6);
+            backdrop-filter: blur(4px);
+        }
+
+        /* Crosshair */
+        #crosshair {
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .crosshair-active {
+            transform: scale(1.6);
+            border-color: #4ade80 !important;
+            box-shadow: 0 0 10px #4ade80;
+        }
+
+        /* Touch Controls */
+        .touch-btn {
+            background: rgba(15, 20, 25, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #e4e4e7;
+            backdrop-filter: blur(4px);
+            touch-action: none;
+        }
+        .touch-btn:active {
+            background: rgba(185, 28, 28, 0.55);
+            border-color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main 3D Render Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Atmospheric Screen-Space Overlays -->
+    <div class="vignette-overlay" id="vignette"></div>
+    <div class="blood-pulse" id="blood-overlay"></div>
+    <div class="scanlines"></div>
+    <canvas id="grain-canvas" width="256" height="256"></canvas>
+
+    <!-- IN-GAME HUD -->
+    <div id="hud" class="fixed inset-0 pointer-events-none z-20 hidden flex-col justify-between p-4 sm:p-6">
+        <!-- Top Row: Mission Telemetry & Acoustic Threat Meter -->
+        <div class="flex flex-wrap justify-between items-start gap-3">
+            <!-- Left: Facility Status & Objective -->
+            <div class="hud-panel rounded px-4 py-3 max-w-xs sm:max-w-sm">
+                <div class="flex items-center gap-2 text-xs text-red-400 tracking-widest uppercase mb-1">
+                    <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                    <span>VOSTOK-9 // SUB-LEVEL 9</span>
+                </div>
+                <div id="objective-text" class="text-sm sm:text-base text-zinc-100 font-bold tracking-wide">
+                    PURGE BIO-RESONATORS: <span id="nodes-count" class="text-emerald-400">0 / 5</span>
+                </div>
+                <div id="sub-objective" class="text-xs text-zinc-400 mt-1">
+                    Follow crimson beacons or use Sonar [Q] to locate nodes.
+                </div>
+            </div>
+
+            <!-- Center Top: Compass / Sonar Bar -->
+            <div class="hud-panel rounded px-3 py-2 hidden md:flex flex-col items-center w-72">
+                <div class="text-[10px] text-zinc-400 tracking-widest uppercase mb-1">ACOUSTIC BEARING</div>
+                <canvas id="compass-canvas" width="260" height="28" class="w-full h-7 rounded bg-black/60"></canvas>
+            </div>
+
+            <!-- Right: Bio-Monitor & Enemy Proximity -->
+            <div class="hud-panel rounded px-4 py-3 flex items-center gap-4">
+                <div>
+                    <div class="text-[10px] text-zinc-400 uppercase tracking-widest">HEART RATE</div>
+                    <div class="flex items-baseline gap-1">
+                        <span id="bpm-text" class="text-xl sm:text-2xl font-bold text-emerald-400">72</span>
+                        <span class="text-xs text-zinc-500">BPM</span>
+                    </div>
+                </div>
+                <div class="h-8 w-px bg-zinc-700"></div>
+                <div>
+                    <div class="text-[10px] text-zinc-400 uppercase tracking-widest">THREAT STATE</div>
+                    <div id="threat-status" class="text-xs sm:text-sm font-bold text-emerald-400 tracking-wider">DORMANT</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Screen: Crosshair, Interaction Prompt & Purge Progress -->
+        <div class="relative flex flex-col items-center justify-center my-auto">
+            <div id="crosshair" class="w-2.5 h-2.5 rounded-full border border-zinc-300/70"></div>
+
+            <!-- Context Prompt -->
+            <div id="interact-prompt" class="hidden mt-5 px-3.5 py-1.5 rounded bg-black/85 border border-emerald-500/50 text-emerald-300 text-xs sm:text-sm tracking-wider uppercase shadow-lg">
+                HOLD [E] TO PURGE RESONATOR
+            </div>
+
+            <!-- Progress Bar for Purging Node -->
+            <div id="purge-bar-container" class="hidden mt-2 w-48 h-2.5 bg-zinc-900 border border-zinc-600 rounded overflow-hidden">
+                <div id="purge-bar-fill" class="h-full bg-gradient-to-r from-amber-500 to-emerald-400 w-0 transition-none"></div>
+            </div>
+
+            <!-- Alert / Narrative Toast -->
+            <div id="radio-message" class="mt-6 max-w-md text-center px-4 py-2 rounded bg-black/80 border-l-2 border-red-600 text-xs sm:text-sm text-zinc-200 opacity-0 transition-opacity duration-500">
+            </div>
+        </div>
+
+        <!-- Bottom Row: Stamina, Flashlight, Sonar Cooldown, Controls Hint -->
+        <div class="flex flex-wrap justify-between items-end gap-4">
+            <!-- Bottom Left: Suit Systems -->
+            <div class="hud-panel rounded p-3 w-64 sm:w-72 space-y-2.5">
+                <!-- Stamina -->
+                <div>
+                    <div class="flex justify-between text-[11px] text-zinc-300 mb-0.5">
+                        <span>STAMINA [SHIFT]</span>
+                        <span id="stance-label" class="text-zinc-400">STANDING</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-zinc-800 rounded overflow-hidden">
+                        <div id="stamina-bar" class="h-full bg-sky-400 w-full"></div>
+                    </div>
+                </div>
+                <!-- Flashlight Battery -->
+                <div>
+                    <div class="flex justify-between text-[11px] text-zinc-300 mb-0.5">
+                        <span>HALOGEN BEAM [F]</span>
+                        <span id="flashlight-state" class="text-amber-400">ACTIVE (RECHARGES OFF)</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-zinc-800 rounded overflow-hidden">
+                        <div id="battery-bar" class="h-full bg-amber-400 w-full"></div>
+                    </div>
+                </div>
+                <!-- Sonar Ping -->
+                <div class="flex justify-between items-center pt-1 border-t border-zinc-800 text-xs">
+                    <span class="text-zinc-400">SONAR PING [Q]</span>
+                    <span id="sonar-status" class="text-emerald-400 font-bold">READY</span>
+                </div>
+            </div>
+
+            <!-- Bottom Right: Mini Tactical Radar & Keybinds -->
+            <div class="flex items-end gap-3">
+                <div class="hud-panel rounded p-2.5 hidden sm:block text-[11px] text-zinc-400 space-y-1">
+                    <div><span class="text-zinc-200">[WASD]</span> Move &nbsp;<span class="text-zinc-200">[SHIFT]</span> Sprint</div>
+                    <div><span class="text-zinc-200">[F]</span> Flashlight <span class="text-zinc-400">(Attracts Entity)</span></div>
+                    <div><span class="text-zinc-200">[C]</span> Crouch / Stealth</div>
+                    <div><span class="text-zinc-200">[Q]</span> Acoustic Ping &nbsp;<span class="text-zinc-200">[E]</span> Interact</div>
+                </div>
+                <!-- Tactical Motion Tracker Canvas -->
+                <div class="hud-panel rounded p-2 flex flex-col items-center">
+                    <div class="text-[9px] text-emerald-400 tracking-widest mb-1">SONAR MAP</div>
+                    <canvas id="radar-canvas" width="116" height="116" class="rounded-full border border-emerald-900/80 bg-black"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MOBILE / TOUCH CONTROLS OVERLAY -->
+    <div id="touch-controls" class="fixed inset-x-0 bottom-4 z-30 hidden px-4 pointer-events-none justify-between items-end">
+        <!-- Virtual Joystick Zone -->
+        <div id="joystick-zone" class="w-32 h-32 rounded-full border border-white/20 bg-black/40 relative pointer-events-auto flex items-center justify-center">
+            <div id="joystick-knob" class="w-12 h-12 rounded-full bg-red-600/60 border border-red-300"></div>
+        </div>
+        <!-- Action Buttons -->
+        <div class="grid grid-cols-2 gap-2 pointer-events-auto mb-16 sm:mb-0">
+            <button id="btn-touch-interact" class="touch-btn px-4 py-3 rounded text-xs font-bold">HOLD PURGE [E]</button>
+            <button id="btn-touch-flash" class="touch-btn px-4 py-3 rounded text-xs font-bold">LIGHT [F]</button>
+            <button id="btn-touch-sonar" class="touch-btn px-4 py-3 rounded text-xs font-bold">SONAR [Q]</button>
+            <button id="btn-touch-sprint" class="touch-btn px-4 py-3 rounded text-xs font-bold">SPRINT</button>
+        </div>
+    </div>
+
+    <!-- LORE TERMINAL MODAL -->
+    <div id="lore-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4">
+        <div class="max-w-lg w-full bg-zinc-950 border-2 border-emerald-600/70 rounded p-6 shadow-2xl text-emerald-400">
+            <div class="flex justify-between items-center border-b border-emerald-800 pb-2 mb-4">
+                <span id="lore-title" class="font-bold tracking-widest uppercase text-sm">TERMINAL LOG // VOSTOK-9</span>
+                <span class="text-xs text-emerald-600">[ESC or E TO CLOSE]</span>
+            </div>
+            <p id="lore-body" class="text-sm leading-relaxed text-emerald-300/90 whitespace-pre-line mb-6"></p>
+            <button id="btn-close-lore" class="w-full py-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-500 rounded text-xs uppercase tracking-widest">
+                RESUME TELEMETRY
+            </button>
+        </div>
+    </div>
+
+    <!-- START / TITLE SCREEN -->
+    <div id="start-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 overflow-y-auto">
+        <div class="max-w-2xl w-full hud-panel border border-red-900/50 rounded-lg p-6 sm:p-10 text-center relative overflow-hidden">
+            <div class="text-xs tracking-[0.3em] text-red-500 uppercase mb-2">KOLA SUPERDEEP BOREHOLE // 12,262 METERS BELOW</div>
+            <h1 class="horror-title text-3xl sm:text-5xl font-black text-zinc-100 mb-4">SUB-LEVEL 9</h1>
+            <div class="text-xs sm:text-sm text-red-400/90 tracking-widest uppercase mb-6">THE CHORUS OF FLESH</div>
+
+            <div class="text-left bg-black/60 border border-zinc-800 rounded p-4 sm:p-5 mb-6 space-y-3 text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                <p>
+                    <strong class="text-red-400">INCIDENT BRIEFING (NOV 1994):</strong> Acoustic drilling in Sector Vostok-9 ruptured an abyssal biological cavity. The crew was assimilated into a single hunting organism designated <strong class="text-zinc-100">SUBJECT-0 ("THE LISTENER")</strong>.
+                </p>
+                <p>
+                    <strong class="text-emerald-400">YOUR DIRECTIVE:</strong> Locate and purge all <strong class="text-white">5 Bio-Acoustic Resonators</strong> scattered through the labyrinth by holding <span class="text-emerald-300">[E]</span>, then return to the <strong class="text-amber-400">Central Ascent Lift</strong> to escape.
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-zinc-800 text-xs text-zinc-400">
+                    <div>• <strong class="text-amber-300">Flashlight [F]:</strong> Illuminates the dark, but makes you visible to Subject-0 from afar.</div>
+                    <div>• <strong class="text-emerald-300">Sonar Ping [Q]:</strong> Reveals nodes through walls, but alerts Subject-0 to your location.</div>
+                    <div>• <strong class="text-sky-300">Crouch [C]:</strong> Move silently in the dark when Subject-0 patrols nearby.</div>
+                    <div>• <strong class="text-red-300">A* Hunter AI:</strong> Subject-0 actively navigates corridors and corners—never corner yourself.</div>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                <button id="btn-start-game" class="px-8 py-4 bg-red-900/80 hover:bg-red-700 text-white font-bold tracking-widest uppercase rounded border border-red-500 shadow-[0_0_25px_rgba(220,38,38,0.5)] transition transform hover:scale-105 cursor-pointer">
+                    DESCEND INTO SUB-LEVEL 9
+                </button>
+            </div>
+            <div class="mt-4 text-[11px] text-zinc-500">Headphones Recommended • Procedural 3D Spatial Audio & Textures</div>
+        </div>
+    </div>
+
+    <!-- PAUSE / END GAME SCREEN -->
+    <div id="end-screen" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/95 p-4">
+        <div class="max-w-xl w-full hud-panel border border-zinc-700 rounded-lg p-8 text-center">
+            <div id="end-subtitle" class="text-xs tracking-[0.25em] text-red-500 uppercase mb-2">TELEMETRY TERMINATED</div>
+            <h2 id="end-title" class="horror-title text-3xl sm:text-5xl font-black text-white mb-4">ASSIMILATED</h2>
+            <p id="end-desc" class="text-sm text-zinc-300 leading-relaxed mb-6">
+                Your acoustic signature was tracked by Subject-0. Your voice has joined the Chorus of Flesh beneath Vostok-9.
+            </p>
+            <div id="end-stats" class="bg-black/60 border border-zinc-800 rounded p-4 mb-6 text-xs text-zinc-400 flex justify-around">
+                <div>NODES PURGED: <strong id="stat-nodes" class="text-white">0/5</strong></div>
+                <div>SURVIVAL TIME: <strong id="stat-time" class="text-white">00:00</strong></div>
+            </div>
+            <button id="btn-restart" class="px-8 py-3.5 bg-red-800 hover:bg-red-600 text-white font-bold tracking-widest uppercase rounded border border-red-400 transition cursor-pointer">
+                REINITIALIZE DESCENT
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /**************************************************************************
+         * 1. PROCEDURAL TEXTURE & BUMP MAP GENERATOR (HTML5 CANVAS)
+         **************************************************************************/
+        const ProceduralTextures = {
+            createConcreteWall() {
+                const size = 512;
+                const albedoCanvas = document.createElement('canvas');
+                const bumpCanvas = document.createElement('canvas');
+                albedoCanvas.width = bumpCanvas.width = size;
+                albedoCanvas.height = bumpCanvas.height = size;
+                const ctx = albedoCanvas.getContext('2d');
+                const bCtx = bumpCanvas.getContext('2d');
+
+                // Base weathered brutalist concrete
+                ctx.fillStyle = '#36393c';
+                ctx.fillRect(0, 0, size, size);
+                bCtx.fillStyle = '#808080';
+                bCtx.fillRect(0, 0, size, size);
+
+                // Heavy noise grain & pitting
+                for (let i = 0; i < 18000; i++) {
+                    const x = Math.random() * size;
+                    const y = Math.random() * size;
+                    const v = 35 + Math.random() * 40;
+                    const s = 1 + Math.random() * 3;
+                    ctx.fillStyle = `rgba(${v},${v + 2},${v + 4},0.35)`;
+                    ctx.fillRect(x, y, s, s);
+
+                    const bv = Math.random() > 0.5 ? 190 : 60;
+                    bCtx.fillStyle = `rgba(${bv},${bv},${bv},0.35)`;
+                    bCtx.fillRect(x, y, s, s);
+                }
+
+                // Concrete formwork horizontal seams & bolt holes
+                ctx.strokeStyle = 'rgba(15, 16, 18, 0.75)';
+                bCtx.strokeStyle = '#202020';
+                ctx.lineWidth = 3;
+                bCtx.lineWidth = 4;
+                for (let y = 128; y < size; y += 128) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
+                    bCtx.beginPath(); bCtx.moveTo(0, y); bCtx.lineTo(size, y); bCtx.stroke();
+                }
+                for (let x = 256; x < size; x += 256) {
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, size); ctx.stroke();
+                    bCtx.beginPath(); bCtx.moveTo(x, 0); bCtx.lineTo(x, size); bCtx.stroke();
+                }
+
+                // Vertical rust & water seepage streaks
+                for (let i = 0; i < 28; i++) {
+                    const sx = Math.random() * size;
+                    const sy = Math.random() * (size * 0.5);
+                    const len = 80 + Math.random() * 260;
+                    const grad = ctx.createLinearGradient(sx, sy, sx, sy + len);
+                    grad.addColorStop(0, 'rgba(65, 28, 16, 0.55)');
+                    grad.addColorStop(0.5, 'rgba(40, 22, 15, 0.35)');
+                    grad.addColorStop(1, 'rgba(20, 20, 20, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(sx - 4, sy, 8 + Math.random() * 14, len);
+                }
+
+                // Bottom grime & mold accumulation
+                const bottomGrad = ctx.createLinearGradient(0, size * 0.65, 0, size);
+                bottomGrad.addColorStop(0, 'rgba(10, 12, 10, 0)');
+                bottomGrad.addColorStop(1, 'rgba(8, 10, 8, 0.88)');
+                ctx.fillStyle = bottomGrad;
+                ctx.fillRect(0, size * 0.65, size, size * 0.35);
+
+                // Yellow/black industrial hazard stripe along lower trim
+                const stripeY = size - 56;
+                ctx.fillStyle = '#785212';
+                ctx.fillRect(0, stripeY, size, 18);
+                ctx.fillStyle = '#18181b';
+                for (let x = -32; x < size + 32; x += 32) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, stripeY);
+                    ctx.lineTo(x + 16, stripeY);
+                    ctx.lineTo(x + 4, stripeY + 18);
+                    ctx.lineTo(x - 12, stripeY + 18);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                const map = new THREE.CanvasTexture(albedoCanvas);
+                const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+                map.wrapS = map.wrapT = bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;
+                return { map, bumpMap };
+            },
+
+            createIndustrialFloor() {
+                const size = 512;
+                const albedoCanvas = document.createElement('canvas');
+                const bumpCanvas = document.createElement('canvas');
+                albedoCanvas.width = bumpCanvas.width = size;
+                albedoCanvas.height = bumpCanvas.height = size;
+                const ctx = albedoCanvas.getContext('2d');
+                const bCtx = bumpCanvas.getContext('2d');
+
+                ctx.fillStyle = '#24272b';
+                ctx.fillRect(0, 0, size, size);
+                bCtx.fillStyle = '#606060';
+                bCtx.fillRect(0, 0, size, size);
+
+                // Industrial tiles (4x4 grid)
+                const step = size / 4;
+                for (let gx = 0; gx < 4; gx++) {
+                    for (let gy = 0; gy < 4; gy++) {
+                        const x = gx * step;
+                        const y = gy * step;
+                        const shade = 30 + Math.floor(Math.random() * 14);
+                        ctx.fillStyle = `rgb(${shade}, ${shade + 2}, ${shade + 5})`;
+                        ctx.fillRect(x + 3, y + 3, step - 6, step - 6);
+
+                        bCtx.fillStyle = '#b0b0b0';
+                        bCtx.fillRect(x + 4, y + 4, step - 8, step - 8);
+
+                        // Diamond plate tread ribs inside each tile
+                        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                        bCtx.fillStyle = '#ffffff';
+                        for (let rx = x + 16; rx < x + step - 12; rx += 20) {
+                            for (let ry = y + 16; ry < y + step - 12; ry += 20) {
+                                ctx.fillRect(rx, ry, 8, 3);
+                                bCtx.fillRect(rx, ry, 8, 3);
+                            }
+                        }
+                    }
+                }
+
+                // Oil / dried blood patches
+                for (let i = 0; i < 18; i++) {
+                    const rx = Math.random() * size;
+                    const ry = Math.random() * size;
+                    const rad = 15 + Math.random() * 55;
+                    const g = ctx.createRadialGradient(rx, ry, 2, rx, ry, rad);
+                    const isBlood = Math.random() < 0.35;
+                    g.addColorStop(0, isBlood ? 'rgba(55, 8, 8, 0.7)' : 'rgba(10, 12, 14, 0.65)');
+                    g.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.fillStyle = g;
+                    ctx.beginPath();
+                    ctx.arc(rx, ry, rad, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                const map = new THREE.CanvasTexture(albedoCanvas);
+                const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+                map.wrapS = map.wrapT = bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;
+                return { map, bumpMap };
+            },
+
+            createRustedCeiling() {
+                const size = 256;
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#181616';
+                ctx.fillRect(0, 0, size, size);
+
+                for (let i = 0; i < 4000; i++) {
+                    const isRust = Math.random() < 0.3;
+                    ctx.fillStyle = isRust ? 'rgba(75, 30, 18, 0.35)' : 'rgba(35, 38, 42, 0.3)';
+                    ctx.fillRect(Math.random() * size, Math.random() * size, 3, 3);
+                }
+
+                ctx.strokeStyle = '#09090b';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(4, 4, size - 8, size - 8);
+
+                const map = new THREE.CanvasTexture(canvas);
+                map.wrapS = map.wrapT = THREE.RepeatWrapping;
+                return map;
+            },
+
+            createBiomassTexture() {
+                const size = 256;
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#2a0709';
+                ctx.fillRect(0, 0, size, size);
+
+                // Sine-like organic fleshy tendrils
+                for (let i = 0; i < 45; i++) {
+                    ctx.strokeStyle = i % 2 === 0 ? 'rgba(135, 18, 25, 0.6)' : 'rgba(60, 8, 12, 0.8)';
+                    ctx.lineWidth = 2 + Math.random() * 6;
+                    ctx.beginPath();
+                    let x = Math.random() * size;
+                    let y = 0;
+                    ctx.moveTo(x, y);
+                    while (y < size) {
+                        y += 16;
+                        x += (Math.random() - 0.5) * 28;
+                        ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                }
+
+                const map = new THREE.CanvasTexture(canvas);
+                map.wrapS = map.wrapT = THREE.RepeatWrapping;
+                return map;
+            }
+        };
+
+        /**************************************************************************
+         * 2. WEB AUDIO API PROCEDURAL HORROR SYNTHESIZER
+         **************************************************************************/
+        class HorrorAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.masterGain = null;
+                this.droneOsc1 = null;
+                this.droneOsc2 = null;
+                this.initialized = false;
+                this.lastHeartbeat = 0;
+            }
+
+            init() {
+                if (this.initialized) return;
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+
+                this.ctx = new AudioCtx();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.7;
+                this.masterGain.connect(this.ctx.destination);
+
+                // Create continuous industrial sub-bass drone
+                this.startAmbientDrone();
+                this.initialized = true;
+            }
+
+            resume() {
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            startAmbientDrone() {
+                const now = this.ctx.currentTime;
+                const osc1 = this.ctx.createOscillator();
+                const osc2 = this.ctx.createOscillator();
+                const filter = this.ctx.createBiquadFilter();
+                const droneGain = this.ctx.createGain();
+
+                osc1.type = 'sawtooth';
+                osc1.frequency.value = 41.2; // Deep E1
+                osc2.type = 'triangle';
+                osc2.frequency.value = 43.0; // Slight detune for unsettling beating phase
+
+                filter.type = 'lowpass';
+                filter.frequency.value = 115;
+
+                // Slow LFO modulating filter cutoff
+                const lfo = this.ctx.createOscillator();
+                const lfoGain = this.ctx.createGain();
+                lfo.frequency.value = 0.12;
+                lfoGain.gain.value = 45;
+                lfo.connect(lfoGain);
+                lfoGain.connect(filter.frequency);
+                lfo.start(now);
+
+                droneGain.gain.value = 0.16;
+                osc1.connect(filter);
+                osc2.connect(filter);
+                filter.connect(droneGain);
+                droneGain.connect(this.masterGain);
+
+                osc1.start(now);
+                osc2.start(now);
+            }
+
+            playFootstep(isSprinting = false, isCrouching = false) {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                const vol = isCrouching ? 0.05 : (isSprinting ? 0.24 : 0.13);
+
+                // Short noise burst + low metallic thud
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(isSprinting ? 95 : 75, now);
+                osc.frequency.exponentialRampToValueAtTime(28, now + 0.09);
+
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.11);
+            }
+
+            playMonsterStep(distance) {
+                if (!this.initialized || distance > 28) return;
+                const now = this.ctx.currentTime;
+                const atten = Math.max(0, 1 - distance / 28);
+                const vol = atten * atten * 0.42;
+
+                // Heavy sub-thump
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(62, now);
+                osc.frequency.exponentialRampToValueAtTime(18, now + 0.22);
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 140;
+
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            }
+
+            playMonsterVocal(distance, isAlert = false) {
+                if (!this.initialized || distance > 34) return;
+                const now = this.ctx.currentTime;
+                const atten = Math.max(0.05, 1 - distance / 34);
+                const vol = (isAlert ? 0.38 : 0.22) * atten;
+
+                const osc = this.ctx.createOscillator();
+                const mod = this.ctx.createOscillator();
+                const modGain = this.ctx.createGain();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                const startFreq = isAlert ? 310 : 120;
+                const endFreq = isAlert ? 95 : 55;
+                const dur = isAlert ? 0.75 : 0.55;
+
+                osc.frequency.setValueAtTime(startFreq, now);
+                osc.frequency.exponentialRampToValueAtTime(endFreq, now + dur);
+
+                mod.type = 'square';
+                mod.frequency.value = isAlert ? 48 : 22;
+                modGain.gain.value = 60;
+                mod.connect(modGain);
+                modGain.connect(osc.frequency);
+
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(vol, now + 0.06);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+
+                osc.start(now);
+                mod.start(now);
+                osc.stop(now + dur + 0.02);
+                mod.stop(now + dur + 0.02);
+            }
+
+            playHeartbeat(bpm) {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                const interval = 60 / bpm;
+                if (now - this.lastHeartbeat < interval) return;
+                this.lastHeartbeat = now;
+
+                const intensity = Math.min(1, Math.max(0, (bpm - 75) / 85));
+                if (intensity <= 0.05) return;
+
+                const makeBeat = (offset, scale) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(58, now + offset);
+                    osc.frequency.exponentialRampToValueAtTime(24, now + offset + 0.12);
+
+                    gain.gain.setValueAtTime(intensity * 0.35 * scale, now + offset);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(now + offset);
+                    osc.stop(now + offset + 0.15);
+                };
+
+                makeBeat(0, 1.0);
+                makeBeat(0.16, 0.65);
+            }
+
+            playSonarPing() {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1320, now);
+                osc.frequency.exponentialRampToValueAtTime(880, now + 0.65);
+
+                gain.gain.setValueAtTime(0.28, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.72);
+            }
+
+            playFlashlightClick() {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(900, now);
+                osc.frequency.exponentialRampToValueAtTime(220, now + 0.035);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.045);
+            }
+
+            playPurgeTone(progress) {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180 + progress * 440, now);
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.09);
+            }
+
+            playNodeComplete() {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                [220, 330, 440, 660].forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+                    gain.gain.setValueAtTime(0.22, now + idx * 0.09);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.09 + 0.45);
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(now + idx * 0.09);
+                    osc.stop(now + idx * 0.09 + 0.46);
+                });
+            }
+
+            playJumpscare() {
+                if (!this.initialized) return;
+                const now = this.ctx.currentTime;
+                const freqs = [110, 116.5, 233, 311, 415, 587];
+                freqs.forEach(f => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(f, now);
+                    osc.frequency.linearRampToValueAtTime(f * 0.72, now + 1.4);
+
+                    gain.gain.setValueAtTime(0.22, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(now);
+                    osc.stop(now + 1.55);
+                });
+            }
+        }
+
+        /**************************************************************************
+         * 3. FACILITY MAP LAYOUT & GUARANTEED A* PATHFINDING ENGINE
+         **************************************************************************/
+        const TILE_SIZE = 4.0;
+        const WALL_HEIGHT = 4.2;
+
+        // 21x21 Interconnected Facility Grid (Multi-loop design so player & AI have rich tactical paths)
+        // '#' = Solid Brutalist Concrete Wall
+        // '.' = Walkable Corridor/Room
+        // 'S' = Central Ascent Lift (Start & Extraction Point)
+        // 'N' = Bio-Resonator Node (5 total)
+        // 'L' = Lore Terminal (3 total)
+        // 'E' = Enemy Initial Spawn
+        const MAP_BLUEPRINT = [
+            "#####################",
+            "#N....#.......#....N#",
+            "#.###.#.#####.#.###.#",
+            "#.#L..#...#...#...#.#",
+            "#.#.#####.#.#####.#.#",
+            "#.........#.........#",
+            "###.###.#####.###.###",
+            "#...#.....#.....#...#",
+            "#.###.###.#.###.###.#",
+            "#.#.....#...#.....#.#",
+            "#.#.###...S...###.#.#",
+            "#.#...#.......#...#.#",
+            "#.###.#.#####.#.###.#",
+            "#.....#...L...#.....#",
+            "###.#####.#.#####.###",
+            "#...#.....#.....#...#",
+            "#.###.###.#.###.###.#",
+            "#.#...#..N#...#..L#.#",
+            "#.#.###.#####.###.#.#",
+            "#N........E........N#",
+            "#####################"
+        ];
+
+        const GRID_H = MAP_BLUEPRINT.length;
+        const GRID_W = MAP_BLUEPRINT[0].length;
+
+        function isCellWalkable(gx, gz) {
+            if (gx < 0 || gz < 0 || gx >= GRID_W || gz >= GRID_H) return false;
+            return MAP_BLUEPRINT[gz][gx] !== '#';
+        }
+
+        function gridToWorld(gx, gz) {
+            return {
+                x: (gx - GRID_W / 2 + 0.5) * TILE_SIZE,
+                z: (gz - GRID_H / 2 + 0.5) * TILE_SIZE
+            };
+        }
+
+        function worldToGrid(wx, wz) {
+            return {
+                gx: Math.floor(wx / TILE_SIZE + GRID_W / 2),
+                gz: Math.floor(wz / TILE_SIZE + GRID_H / 2)
+            };
+        }
+
+        /**
+         * Grid-Based A* Pathfinding
+         * Strictly prevents diagonal corner-cutting next to walls so the entity NEVER snags on corners.
+         */
+        function findAStarPath(startGx, startGz, goalGx, goalGz) {
+            if (!isCellWalkable(goalGx, goalGz)) return [];
+            if (startGx === goalGx && startGz === goalGz) return [gridToWorld(goalGx, goalGz)];
+
+            const key = (x, z) => `${x},${z}`;
+            const openSet = [{ gx: startGx, gz: startGz, g: 0, f: Math.hypot(goalGx - startGx, goalGz - startGz) }];
+            const cameFrom = new Map();
+            const gScore = new Map();
+            const closedSet = new Set();
+            gScore.set(key(startGx, startGz), 0);
+
+            const dirs = [
+                { dx: 0, dz: -1, cost: 1.0 },
+                { dx: 1, dz: 0, cost: 1.0 },
+                { dx: 0, dz: 1, cost: 1.0 },
+                { dx: -1, dz: 0, cost: 1.0 },
+                // Diagonals (only permitted if both adjacent cardinal cells are open!)
+                { dx: 1, dz: -1, cost: 1.414, diag: true },
+                { dx: 1, dz: 1, cost: 1.414, diag: true },
+                { dx: -1, dz: 1, cost: 1.414, diag: true },
+                { dx: -1, dz: -1, cost: 1.414, diag: true }
+            ];
+
+            let iterations = 0;
+            while (openSet.length > 0 && iterations < 900) {
+                iterations++;
+                openSet.sort((a, b) => a.f - b.f);
+                const current = openSet.shift();
+                const cKey = key(current.gx, current.gz);
+
+                if (current.gx === goalGx && current.gz === goalGz) {
+                    const path = [];
+                    let curr = current;
+                    while (curr) {
+                        path.unshift(gridToWorld(curr.gx, curr.gz));
+                        curr = cameFrom.get(key(curr.gx, curr.gz));
+                    }
+                    // Drop start node if we have further waypoints so AI immediately steers toward next center
+                    if (path.length > 1) path.shift();
+                    return path;
+                }
+
+                closedSet.add(cKey);
+
+                for (const d of dirs) {
+                    const nx = current.gx + d.dx;
+                    const nz = current.gz + d.dz;
+                    if (!isCellWalkable(nx, nz)) continue;
+
+                    // Prevent diagonal corner clipping
+                    if (d.diag) {
+                        if (!isCellWalkable(current.gx + d.dx, current.gz) ||
+                            !isCellWalkable(current.gx, current.gz + d.dz)) {
+                            continue;
+                        }
+                    }
+
+                    const nKey = key(nx, nz);
+                    if (closedSet.has(nKey)) continue;
+
+                    const tentativeG = current.g + d.cost;
+                    const prevG = gScore.has(nKey) ? gScore.get(nKey) : Infinity;
+
+                    if (tentativeG < prevG) {
+                        cameFrom.set(nKey, current);
+                        gScore.set(nKey, tentativeG);
+                        const h = Math.hypot(goalGx - nx, goalGz - nz);
+                        const existing = openSet.find(n => n.gx === nx && n.gz === nz);
+                        if (existing) {
+                            existing.g = tentativeG;
+                            existing.f = tentativeG + h;
+                        } else {
+                            openSet.push({ gx: nx, gz: nz, g: tentativeG, f: tentativeG + h });
+                        }
+                    }
+                }
+            }
+            return [];
+        }
+
+        /**
+         * Grid Raycast Line-of-Sight check (DDA / stepped ray)
+         */
+        function hasLineOfSight(x1, z1, x2, z2) {
+            const dist = Math.hypot(x2 - x1, z2 - z1);
+            const steps = Math.ceil(dist / 0.35);
+            for (let i = 1; i < steps; i++) {
+                const t = i / steps;
+                const x = x1 + (x2 - x1) * t;
+                const z = z1 + (z2 - z1) * t;
+                const { gx, gz } = worldToGrid(x, z);
+                if (!isCellWalkable(gx, gz)) return false;
+            }
+            return true;
+        }
+
+        /**************************************************************************
+         * 4. LORE ARCHIVES
+         **************************************************************************/
+        const LORE_LOGS = [
+            {
+                title: "LOG 01 // DR. KOROLEV (BIO-ACOUSTICS)",
+                body: "Depth: 12,260m.\nWe thought the seismic readings beneath Sub-Level 9 were tectonic. When the drill broke through the basalt crust, it didn't hit magma—it hit pressurized biological tissue.\n\nIt responds to sound waves. Worse: when Technician Markov spoke into the borehole mic, the tissue echoed his voice back... three seconds before he spoke."
+            },
+            {
+                title: "LOG 02 // SECURITY CHIEF VOLKOV",
+                body: "Subject-0 is no longer contained in the Med-Bay. It fused three of the excavation crew into a single locomotory chassis. Its optical nerves are atrophied, yet it hunts by tracking halogen light scatter and acoustic vibrations.\n\nIf you hear its mandible clicking nearby: KILL YOUR FLASHLIGHT [F], CROUCH [C], and keep moving around corridor loops."
+            },
+            {
+                title: "LOG 03 // EMERGENCY ASCENT PROTOCOL",
+                body: "The Central Ascent Cage is locked down by the biological quarantine interlock.\n\nTo override the interlock, all 5 Acoustic Containment Resonators must be purged manually. Each purge sends a high-decibel ultrasonic shockwave through the sector—expect Subject-0 to converge on a Resonator the moment it is purged!"
+            }
+        ];
+
+        /**************************************************************************
+         * 5. MAIN 3D HORROR GAME APPLICATION
+         **************************************************************************/
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x030405);
+        scene.fog = new THREE.FogExp2(0x040507, 0.115);
+
+        const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 45);
+        const pitchObject = new THREE.Object3D();
+        pitchObject.add(camera);
+        const yawObject = new THREE.Object3D();
+        yawObject.position.y = 1.7;
+        yawObject.add(pitchObject);
+        scene.add(yawObject);
+
+        const audio = new HorrorAudioEngine();
+
+        // Generate Procedural Textures
+        const wallTex = ProceduralTextures.createConcreteWall();
+        const floorTex = ProceduralTextures.createIndustrialFloor();
+        const ceilTex = ProceduralTextures.createRustedCeiling();
+        const bioTex = ProceduralTextures.createBiomassTexture();
+
+        // Shared Materials
+        const wallMaterial = new THREE.MeshStandardMaterial({
+            map: wallTex.map,
+            bumpMap: wallTex.bumpMap,
+            bumpScale: 0.08,
+            roughnessMap: wallTex.bumpMap,
+            roughness: 0.85,
+            metalness: 0.15
+        });
+
+        const floorMaterial = new THREE.MeshStandardMaterial({
+            map: floorTex.map,
+            bumpMap: floorTex.bumpMap,
+            bumpScale: 0.05,
+            roughness: 0.65,
+            metalness: 0.35
+        });
+
+        const ceilingMaterial = new THREE.MeshStandardMaterial({
+            map: ceilTex,
+            roughness: 0.9,
+            metalness: 0.2
+        });
+
+        const bioMaterial = new THREE.MeshStandardMaterial({
+            map: bioTex,
+            bumpMap: bioTex,
+            bumpScale: 0.12,
+            roughness: 0.4,
+            metalness: 0.1,
+            emissive: new THREE.Color(0x280202)
+        });
+
+        // World Containers & Colliders
+        const wallBoxes = []; // Array of { minX, maxX, minZ, maxZ } for sliding circle-AABB collision
+        const resonatorNodes = [];
+        const loreTerminals = [];
+        const flickeringLights = [];
+        let liftZone = null;
+        let liftLight = null;
+        let liftCageMesh = null;
+        let enemySpawnPos = { x: 0, z: 0, gx: 10, gz: 19 };
+
+        // Ambient base illumination so pitch-black areas still show subtle silhouette contours
+        const ambientLight = new THREE.AmbientLight(0x141820, 0.32);
+        scene.add(ambientLight);
+
+        // Player Dual-Cone Flashlight attached to Camera
+        const flashlightMain = new THREE.SpotLight(0xfff4dc, 3.2, 26, Math.PI / 5.2, 0.45, 1.5);
+        flashlightMain.position.set(0.18, -0.12, 0);
+        flashlightMain.castShadow = true;
+        flashlightMain.shadow.mapSize.width = 1024;
+        flashlightMain.shadow.mapSize.height = 1024;
+        flashlightMain.shadow.camera.near = 0.2;
+        flashlightMain.shadow.camera.far = 26;
+        camera.add(flashlightMain);
+        camera.add(flashlightMain.target);
+        flashlightMain.target.position.set(0, -0.05, -6);
+
+        // Soft wide spill cone for realistic peripheral lens glow
+        const flashlightSpill = new THREE.SpotLight(0xcbd5e1, 0.9, 14, Math.PI / 2.6, 0.85, 1.8);
+        flashlightSpill.position.set(0.18, -0.12, 0);
+        camera.add(flashlightSpill);
+        camera.add(flashlightSpill.target);
+        flashlightSpill.target.position.set(0, -0.05, -6);
+
+        // Close personal lantern glow so nearby walls are faintly readable
+        const playerAuraLight = new THREE.PointLight(0x334155, 0.45, 4.5);
+        camera.add(playerAuraLight);
+
+        // Floating Dust Particles in Sub-Level 9
+        const dustCount = 550;
+        const dustGeo = new THREE.BufferGeometry();
+        const dustPositions = new Float32Array(dustCount * 3);
+        for (let i = 0; i < dustCount; i++) {
+            dustPositions[i * 3] = (Math.random() - 0.5) * GRID_W * TILE_SIZE;
+            dustPositions[i * 3 + 1] = 0.3 + Math.random() * (WALL_HEIGHT - 0.5);
+            dustPositions[i * 3 + 2] = (Math.random() - 0.5) * GRID_H * TILE_SIZE;
+        }
+        dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+        const dustMat = new THREE.PointsMaterial({
+            color: 0x94a3b8,
+            size: 0.045,
+            transparent: true,
+            opacity: 0.45
+        });
+        const dustSystem = new THREE.Points(dustGeo, dustMat);
+        scene.add(dustSystem);
+
+        // Build Level Geometry from Blueprint
+        function buildFacilityLevel() {
+            const wallGeo = new THREE.BoxGeometry(TILE_SIZE, WALL_HEIGHT, TILE_SIZE);
+            const buttressGeo = new THREE.BoxGeometry(0.45, WALL_HEIGHT, 0.45);
+            const buttressMat = new THREE.MeshStandardMaterial({ color: 0x1e2024, roughness: 0.6, metalness: 0.6 });
+            const pipeGeo = new THREE.CylinderGeometry(0.14, 0.14, TILE_SIZE, 8);
+            pipeGeo.rotateZ(Math.PI / 2);
+            const pipeMat = new THREE.MeshStandardMaterial({ color: 0x452218, roughness: 0.5, metalness: 0.7 });
+
+            // Continuous Floor & Ceiling
+            const totalW = GRID_W * TILE_SIZE;
+            const totalH = GRID_H * TILE_SIZE;
+            floorTex.map.repeat.set(GRID_W * 1.5, GRID_H * 1.5);
+            floorTex.bumpMap.repeat.set(GRID_W * 1.5, GRID_H * 1.5);
+            ceilTex.repeat.set(GRID_W, GRID_H);
+
+            const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(totalW, totalH), floorMaterial);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+
+            const ceilMesh = new THREE.Mesh(new THREE.PlaneGeometry(totalW, totalH), ceilingMaterial);
+            ceilMesh.rotation.x = Math.PI / 2;
+            ceilMesh.position.y = WALL_HEIGHT;
+            scene.add(ceilMesh);
+
+            let loreIdx = 0;
+
+            for (let gz = 0; gz < GRID_H; gz++) {
+                for (let gx = 0; gx < GRID_W; gx++) {
+                    const cell = MAP_BLUEPRINT[gz][gx];
+                    const { x, z } = gridToWorld(gx, gz);
+
+                    if (cell === '#') {
+                        const wallMesh = new THREE.Mesh(wallGeo, wallMaterial);
+                        wallMesh.position.set(x, WALL_HEIGHT / 2, z);
+                        wallMesh.castShadow = true;
+                        wallMesh.receiveShadow = true;
+                        scene.add(wallMesh);
+
+                        // Register solid AABB for player/enemy collision
+                        wallBoxes.push({
+                            minX: x - TILE_SIZE / 2,
+                            maxX: x + TILE_SIZE / 2,
+                            minZ: z - TILE_SIZE / 2,
+                            maxZ: z + TILE_SIZE / 2
+                        });
+                    } else {
+                        // Add architectural ceiling pipes & corner ribs
+                        if ((gx + gz) % 2 === 0) {
+                            const pipe = new THREE.Mesh(pipeGeo, pipeMat);
+                            pipe.position.set(x, WALL_HEIGHT - 0.28, z);
+                            if (gx % 2 === 1) pipe.rotation.y = Math.PI / 2;
+                            scene.add(pipe);
+                        }
+
+                        // Sparse flickering industrial corridor lights
+                        if ((gx * 7 + gz * 13) % 19 === 0 && cell === '.') {
+                            const fixture = new THREE.Mesh(
+                                new THREE.BoxGeometry(0.6, 0.12, 0.25),
+                                new THREE.MeshBasicMaterial({ color: 0xffb366 })
+                            );
+                            fixture.position.set(x, WALL_HEIGHT - 0.08, z);
+                            scene.add(fixture);
+
+                            const pLight = new THREE.PointLight(0xff8833, 0.75, 9.5, 2.0);
+                            pLight.position.set(x, WALL_HEIGHT - 0.35, z);
+                            scene.add(pLight);
+                            flickeringLights.push({
+                                light: pLight,
+                                fixture,
+                                baseIntensity: 0.75,
+                                seed: Math.random() * 100
+                            });
+                        }
+
+                        // Central Ascent Lift (Start & Extraction)
+                        if (cell === 'S') {
+                            liftZone = { x, z, gx, gz };
+                            yawObject.position.set(x, 1.7, z);
+
+                            const cageGroup = new THREE.Group();
+                            cageGroup.position.set(x, 0, z);
+
+                            const baseRing = new THREE.Mesh(
+                                new THREE.CylinderGeometry(1.45, 1.55, 0.16, 16),
+                                new THREE.MeshStandardMaterial({ color: 0xca8a04, roughness: 0.5, metalness: 0.6 })
+                            );
+                            baseRing.position.y = 0.08;
+                            cageGroup.add(baseRing);
+
+                            // 4 Lift Cage Pillars
+                            for (let a = 0; a < 4; a++) {
+                                const ang = (a * Math.PI) / 2 + Math.PI / 4;
+                                const post = new THREE.Mesh(
+                                    new THREE.BoxGeometry(0.14, WALL_HEIGHT, 0.14),
+                                    buttressMat
+                                );
+                                post.position.set(Math.cos(ang) * 1.3, WALL_HEIGHT / 2, Math.sin(ang) * 1.3);
+                                cageGroup.add(post);
+                            }
+
+                            liftLight = new THREE.PointLight(0xf59e0b, 1.2, 11);
+                            liftLight.position.set(0, WALL_HEIGHT - 0.6, 0);
+                            cageGroup.add(liftLight);
+
+                            scene.add(cageGroup);
+                            liftCageMesh = cageGroup;
+                        }
+
+                        // Bio-Acoustic Resonator Node ('N')
+                        if (cell === 'N') {
+                            createResonatorNode(x, z, gx, gz, resonatorNodes.length);
+                        }
+
+                        // Lore CRT Terminal ('L')
+                        if (cell === 'L') {
+                            createLoreTerminal(x, z, gx, gz, loreIdx % LORE_LOGS.length);
+                            loreIdx++;
+                        }
+
+                        // Enemy Initial Spawn ('E')
+                        if (cell === 'E') {
+                            enemySpawnPos = { x, z, gx, gz };
+                        }
+                    }
+                }
+            }
+        }
+
+        function createResonatorNode(x, z, gx, gz, index) {
+            const group = new THREE.Group();
+            group.position.set(x, 0, z);
+
+            // Heavy octagonal pedestal
+            const ped = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.65, 0.85, 1.1, 8),
+                new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.4, metalness: 0.8 })
+            );
+            ped.position.y = 0.55;
+            group.add(ped);
+
+            // Glowing containment core cylinder
+            const coreMat = new THREE.MeshStandardMaterial({
+                color: 0xdc2626,
+                emissive: 0x991b1b,
+                emissiveIntensity: 1.4,
+                roughness: 0.2,
+                metalness: 0.3
+            });
+            const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 1), coreMat);
+            core.position.y = 1.65;
+            group.add(core);
+
+            // Outer rotating containment rings
+            const ringMat = new THREE.MeshStandardMaterial({ color: 0x52525b, metalness: 0.9, roughness: 0.3 });
+            const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.045, 8, 24), ringMat);
+            ring1.position.y = 1.65;
+            group.add(ring1);
+
+            // Organic tendrils creeping around unpurged node
+            const tendrils = new THREE.Group();
+            for (let i = 0; i < 6; i++) {
+                const ang = (i / 6) * Math.PI * 2;
+                const tendril = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.05, 0.18, 1.5, 6),
+                    bioMaterial
+                );
+                tendril.position.set(Math.cos(ang) * 0.72, 0.7, Math.sin(ang) * 0.72);
+                tendril.rotation.z = (Math.random() - 0.5) * 0.5;
+                tendril.rotation.x = (Math.random() - 0.5) * 0.5;
+                tendrils.add(tendril);
+            }
+            group.add(tendrils);
+
+            const nodeLight = new THREE.PointLight(0xef4444, 1.6, 10, 2);
+            nodeLight.position.set(0, 2.1, 0);
+            group.add(nodeLight);
+
+            scene.add(group);
+
+            // Add small collision radius around pedestal center
+            wallBoxes.push({
+                minX: x - 0.65,
+                maxX: x + 0.65,
+                minZ: z - 0.65,
+                maxZ: z + 0.65
+            });
+
+            resonatorNodes.push({
+                index,
+                x, z, gx, gz,
+                group,
+                core,
+                coreMat,
+                ring1,
+                tendrils,
+                nodeLight,
+                purged: false,
+                progress: 0
+            });
+        }
+
+        function createLoreTerminal(x, z, gx, gz, logIndex) {
+            const group = new THREE.Group();
+            group.position.set(x, 0, z);
+
+            const desk = new THREE.Mesh(
+                new THREE.BoxGeometry(0.9, 1.05, 0.6),
+                new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.7, metalness: 0.5 })
+            );
+            desk.position.y = 0.525;
+            group.add(desk);
+
+            const monitor = new THREE.Mesh(
+                new THREE.BoxGeometry(0.55, 0.45, 0.45),
+                new THREE.MeshStandardMaterial({
+                    color: 0x064e3b,
+                    emissive: 0x10b981,
+                    emissiveIntensity: 0.65
+                })
+            );
+            monitor.position.set(0, 1.28, 0);
+            group.add(monitor);
+
+            const termLight = new THREE.PointLight(0x10b981, 0.8, 5);
+            termLight.position.set(0, 1.5, 0.3);
+            group.add(termLight);
+
+            scene.add(group);
+            loreTerminals.push({ x, z, gx, gz, logIndex, read: false });
+        }
+
+        /**************************************************************************
+         * 6. SUBJECT-0 ("THE LISTENER") PROCEDURAL 3D ARTICULATED ENTITY & AI
+         **************************************************************************/
+        class SubjectZeroEntity {
+            constructor(spawn) {
+                this.x = spawn.x;
+                this.z = spawn.z;
+                this.rotationY = 0;
+                this.state = 'PATROL'; // 'PATROL' | 'INVESTIGATE' | 'CHASE'
+                this.speed = 2.65;
+                this.path = [];
+                this.repathTimer = 0;
+                this.alertTimer = 0;
+                this.investigateTarget = null;
+                this.animTime = 0;
+                this.stepPhase = 0;
+                this.vocalCooldown = 4.0;
+
+                this.mesh = this.buildArticulatedModel();
+                this.mesh.position.set(this.x, 0, this.z);
+                scene.add(this.mesh);
+            }
+
+            buildArticulatedModel() {
+                const root = new THREE.Group();
+
+                const fleshMat = new THREE.MeshStandardMaterial({
+                    map: bioTex,
+                    bumpMap: bioTex,
+                    bumpScale: 0.15,
+                    color: 0x4a1215,
+                    roughness: 0.35,
+                    metalness: 0.2
+                });
+
+                const boneMat = new THREE.MeshStandardMaterial({
+                    color: 0x9ca3af,
+                    roughness: 0.5,
+                    metalness: 0.4
+                });
+
+                const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff1e1e });
+
+                // Pelvis & Hunched Spine Torso
+                this.torso = new THREE.Group();
+                this.torso.position.y = 1.45;
+                root.add(this.torso);
+
+                const chest = new THREE.Mesh(new THREE.DodecahedronGeometry(0.52, 1), fleshMat);
+                chest.scale.set(0.95, 1.35, 0.8);
+                chest.rotation.x = 0.28;
+                this.torso.add(chest);
+
+                // Exposed Ribcage Spines
+                for (let i = 0; i < 4; i++) {
+                    const rib = new THREE.Mesh(new THREE.TorusGeometry(0.42 - i * 0.04, 0.04, 6, 12, Math.PI * 1.3), boneMat);
+                    rib.position.set(0, 0.25 - i * 0.18, 0.05);
+                    rib.rotation.x = Math.PI / 2 + 0.2;
+                    this.torso.add(rib);
+                }
+
+                // Glowing Bioluminescent Pustules on Back
+                this.cystMat = new THREE.MeshBasicMaterial({ color: 0xdc2626 });
+                for (let i = 0; i < 5; i++) {
+                    const cyst = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), this.cystMat);
+                    cyst.position.set((Math.random() - 0.5) * 0.45, (Math.random() - 0.5) * 0.5, -0.35);
+                    this.torso.add(cyst);
+                }
+
+                // Twitching Elongated Skull
+                this.head = new THREE.Group();
+                this.head.position.set(0, 0.78, 0.28);
+                this.torso.add(this.head);
+
+                const skull = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.68, 7), boneMat);
+                skull.rotation.x = Math.PI / 2.2;
+                this.head.add(skull);
+
+                const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), eyeMat);
+                eyeL.position.set(-0.11, 0.06, 0.28);
+                const eyeR = eyeL.clone();
+                eyeR.position.x = 0.11;
+                this.head.add(eyeL, eyeR);
+
+                // Entity Sensory Glow Light
+                this.sensoryLight = new THREE.PointLight(0xdc2626, 1.3, 6.5);
+                this.sensoryLight.position.set(0, 0.1, 0.4);
+                this.head.add(this.sensoryLight);
+
+                // Articulated Long Stalking Arms
+                const buildArm = (side) => {
+                    const armGroup = new THREE.Group();
+                    armGroup.position.set(side * 0.52, 0.45, 0.1);
+                    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.85, 7), fleshMat);
+                    upper.position.y = -0.4;
+                    armGroup.add(upper);
+
+                    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.03, 0.95, 7), boneMat);
+                    forearm.position.set(0, -1.15, 0.18);
+                    forearm.rotation.x = -0.35;
+                    armGroup.add(forearm);
+                    return armGroup;
+                };
+                this.leftArm = buildArm(-1);
+                this.rightArm = buildArm(1);
+                this.torso.add(this.leftArm, this.rightArm);
+
+                // Articulated Legs
+                const buildLeg = (side) => {
+                    const legGroup = new THREE.Group();
+                    legGroup.position.set(side * 0.28, 1.25, 0);
+                    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.08, 0.75, 7), fleshMat);
+                    thigh.position.y = -0.35;
+                    legGroup.add(thigh);
+
+                    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.04, 0.75, 7), boneMat);
+                    shin.position.y = -0.95;
+                    legGroup.add(shin);
+                    return legGroup;
+                };
+                this.leftLeg = buildLeg(-1);
+                this.rightLeg = buildLeg(1);
+                root.add(this.leftLeg, this.rightLeg);
+
+                return root;
+            }
+
+            reset(spawn) {
+                this.x = spawn.x;
+                this.z = spawn.z;
+                this.state = 'PATROL';
+                this.path = [];
+                this.repathTimer = 0;
+                this.alertTimer = 0;
+                this.mesh.position.set(this.x, 0, this.z);
+            }
+
+            triggerSoundAlert(wx, wz, duration = 9.0) {
+                const { gx, gz } = worldToGrid(wx, wz);
+                if (!isCellWalkable(gx, gz)) return;
+                this.investigateTarget = { gx, gz };
+                if (this.state !== 'CHASE') {
+                    this.state = 'INVESTIGATE';
+                    this.alertTimer = duration;
+                    this.repathTimer = 0; // Compute new A* path immediately
+                    const dist = Math.hypot(wx - this.x, wz - this.z);
+                    audio.playMonsterVocal(dist, true);
+                }
+            }
+
+            pickNextPatrolNode() {
+                // Prioritize unpurged nodes 70% of the time so the monster actively guards objectives
+                const unpurged = resonatorNodes.filter(n => !n.purged);
+                if (unpurged.length > 0 && Math.random() < 0.72) {
+                    const pick = unpurged[Math.floor(Math.random() * unpurged.length)];
+                    return { gx: pick.gx, gz: pick.gz };
+                }
+                // Otherwise pick a random walkable cell across the map
+                for (let tries = 0; tries < 40; tries++) {
+                    const rx = 1 + Math.floor(Math.random() * (GRID_W - 2));
+                    const rz = 1 + Math.floor(Math.random() * (GRID_H - 2));
+                    if (isCellWalkable(rx, rz)) return { gx: rx, gz: rz };
+                }
+                return { gx: 10, gz: 10 };
+            }
+
+            update(dt, playerState) {
+                const distToPlayer = Math.hypot(playerState.x - this.x, playerState.z - this.z);
+                const hasLOS = distToPlayer < 22 && hasLineOfSight(this.x, this.z, playerState.x, playerState.z);
+
+                // Detection Radius depends on player Flashlight, Sprinting, and Crouching
+                let sightRange = playerState.flashlightOn ? 19.5 : 8.5;
+                if (playerState.crouching && !playerState.flashlightOn) sightRange = 4.8;
+
+                let hearingRange = 3.2;
+                if (playerState.sprinting) hearingRange = 13.5;
+                else if (playerState.moving && !playerState.crouching) hearingRange = 6.0;
+
+                // Evaluate Sight & Hearing Detection
+                const dirToPlayerX = (playerState.x - this.x) / (distToPlayer || 1);
+                const dirToPlayerZ = (playerState.z - this.z) / (distToPlayer || 1);
+                const forwardX = Math.sin(this.rotationY);
+                const forwardZ = Math.cos(this.rotationY);
+                const dot = dirToPlayerX * forwardX + dirToPlayerZ * forwardZ;
+
+                const canSeePlayer = hasLOS && (
+                    (distToPlayer < sightRange && dot > -0.25) ||
+                    distToPlayer < 3.8
+                );
+                const canHearPlayer = distToPlayer < hearingRange;
+
+                if (canSeePlayer) {
+                    if (this.state !== 'CHASE') {
+                        audio.playMonsterVocal(distToPlayer, true);
+                    }
+                    this.state = 'CHASE';
+                    this.alertTimer = 6.5;
+                } else if (canHearPlayer && this.state === 'PATROL') {
+                    this.triggerSoundAlert(playerState.x, playerState.z, 7.0);
+                }
+
+                // State Timers & Speed Scaling
+                const purgedBonus = playerState.purgedCount * 0.14;
+                if (this.state === 'CHASE') {
+                    this.speed = 4.15 + purgedBonus;
+                    this.alertTimer -= dt;
+                    this.sensoryLight.intensity = 2.4;
+                    this.cystMat.color.setHex(0xff2222);
+                    if (this.alertTimer <= 0) {
+                        this.state = 'INVESTIGATE';
+                        this.investigateTarget = worldToGrid(playerState.x, playerState.z);
+                        this.alertTimer = 6.0;
+                    }
+                } else if (this.state === 'INVESTIGATE') {
+                    this.speed = 3.25 + purgedBonus * 0.7;
+                    this.alertTimer -= dt;
+                    this.sensoryLight.intensity = 1.5;
+                    this.cystMat.color.setHex(0xf97316);
+                    if (this.alertTimer <= 0) {
+                        this.state = 'PATROL';
+                    }
+                } else {
+                    this.speed = 2.45 + purgedBonus * 0.5;
+                    this.sensoryLight.intensity = 0.9;
+                    this.cystMat.color.setHex(0x991b1b);
+                }
+
+                // A* Path Recalculation
+                this.repathTimer -= dt;
+                const myGrid = worldToGrid(this.x, this.z);
+
+                if (this.repathTimer <= 0 || this.path.length === 0) {
+                    if (this.state === 'CHASE') {
+                        const pGrid = worldToGrid(playerState.x, playerState.z);
+                        this.path = findAStarPath(myGrid.gx, myGrid.gz, pGrid.gx, pGrid.gz);
+                        this.repathTimer = 0.3;
+                    } else if (this.state === 'INVESTIGATE' && this.investigateTarget) {
+                        this.path = findAStarPath(myGrid.gx, myGrid.gz, this.investigateTarget.gx, this.investigateTarget.gz);
+                        if (this.path.length === 0) {
+                            this.state = 'PATROL';
+                        }
+                        this.repathTimer = 0.6;
+                    } else {
+                        const target = this.pickNextPatrolNode();
+                        this.path = findAStarPath(myGrid.gx, myGrid.gz, target.gx, target.gz);
+                        this.repathTimer = 2.5;
+                    }
+                }
+
+                // Follow A* Waypoint Center smoothly (guarantees zero wall/corner snagging)
+                let targetX = this.x;
+                let targetZ = this.z;
+
+                if (this.path.length > 0) {
+                    const wp = this.path[0];
+                    const distWp = Math.hypot(wp.x - this.x, wp.z - this.z);
+                    if (distWp < 0.35) {
+                        this.path.shift();
+                    }
+                    if (this.path.length > 0) {
+                        targetX = this.path[0].x;
+                        targetZ = this.path[0].z;
+                    }
+                } else if (this.state === 'CHASE' && hasLOS) {
+                    targetX = playerState.x;
+                    targetZ = playerState.z;
+                }
+
+                const dx = targetX - this.x;
+                const dz = targetZ - this.z;
+                const len = Math.hypot(dx, dz);
+
+                if (len > 0.01) {
+                    const moveX = (dx / len) * this.speed * dt;
+                    const moveZ = (dz / len) * this.speed * dt;
+
+                    // Apply movement + safety sliding collision with radius 0.55m
+                    const resolved = resolveCircleCollision(this.x + moveX, this.z + moveZ, 0.55);
+                    this.x = resolved.x;
+                    this.z = resolved.z;
+
+                    // Smooth angular turn toward heading
+                    const desiredAngle = Math.atan2(dx, dz);
+                    let angleDiff = desiredAngle - this.rotationY;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    this.rotationY += angleDiff * Math.min(1, dt * 10);
+                }
+
+                this.mesh.position.set(this.x, 0, this.z);
+                this.mesh.rotation.y = this.rotationY;
+
+                // Procedural Articulated Limb & Twitch Animation
+                this.animTime += dt * this.speed * 2.6;
+                const swing = Math.sin(this.animTime) * 0.65;
+                this.leftLeg.rotation.x = swing;
+                this.rightLeg.rotation.x = -swing;
+                this.leftArm.rotation.x = -swing * 0.85 - 0.3;
+                this.rightArm.rotation.x = swing * 0.85 - 0.3;
+
+                // Unsettling head twitch
+                this.head.rotation.z = Math.sin(this.animTime * 1.7) * 0.18 + (Math.random() - 0.5) * 0.08;
+                this.head.rotation.x = Math.cos(this.animTime * 0.9) * 0.12;
+                this.torso.position.y = 1.45 + Math.abs(Math.cos(this.animTime)) * 0.1;
+
+                // Spatial Monster Footsteps & Ambient Clicks
+                this.stepPhase += dt * this.speed * 0.82;
+                if (this.stepPhase >= 1.0) {
+                    this.stepPhase = 0;
+                    audio.playMonsterStep(distToPlayer);
+                }
+
+                this.vocalCooldown -= dt;
+                if (this.vocalCooldown <= 0) {
+                    this.vocalCooldown = this.state === 'CHASE' ? (2.2 + Math.random() * 2) : (5.0 + Math.random() * 5);
+                    audio.playMonsterVocal(distToPlayer, this.state === 'CHASE');
+                }
+
+                return distToPlayer;
+            }
+        }
+
+        /**************************************************************************
+         * 7. SLIDING COLLISION DETECTION (CIRCLE VS AABB)
+         **************************************************************************/
+        function resolveCircleCollision(px, pz, radius) {
+            let x = px;
+            let z = pz;
+
+            // Run 3 iterative resolution passes for zero corner-sticking
+            for (let pass = 0; pass < 3; pass++) {
+                for (let i = 0; i < wallBoxes.length; i++) {
+                    const box = wallBoxes[i];
+                    // Quick broadphase filter
+                    if (x + radius < box.minX || x - radius > box.maxX ||
+                        z + radius < box.minZ || z - radius > box.maxZ) {
+                        continue;
+                    }
+
+                    const closestX = Math.max(box.minX, Math.min(x, box.maxX));
+                    const closestZ = Math.max(box.minZ, Math.min(z, box.maxZ));
+                    const dx = x - closestX;
+                    const dz = z - closestZ;
+                    const distSq = dx * dx + dz * dz;
+
+                    if (distSq < radius * radius) {
+                        const dist = Math.sqrt(distSq);
+                        if (dist > 0.0001) {
+                            const overlap = radius - dist;
+                            x += (dx / dist) * overlap;
+                            z += (dz / dist) * overlap;
+                        } else {
+                            // Deep penetration fallback
+                            x += radius * 0.5;
+                        }
+                    }
+                }
+            }
+            return { x, z };
+        }
+
+        /**************************************************************************
+         * 8. PLAYER STATE, CONTROLS & HUD MANAGEMENT
+         **************************************************************************/
+        buildFacilityLevel();
+        const subjectZero = new SubjectZeroEntity(enemySpawnPos);
+
+        const gameState = {
+            running: false,
+            gameOver: false,
+            startTime: 0,
+            elapsedTime: 0,
+            purgedCount: 0,
+            totalNodes: resonatorNodes.length,
+            sonarCooldown: 0,
+            sonarActiveTimer: 0,
+            readingLore: false
+        };
+
+        const player = {
+            x: liftZone.x,
+            z: liftZone.z,
+            radius: 0.62,
+            yaw: 0,
+            pitch: 0,
+            stamina: 100,
+            battery: 100,
+            flashlightOn: true,
+            crouching: false,
+            sprinting: false,
+            moving: false,
+            interacting: false,
+            headBobTimer: 0,
+            stepAccum: 0,
+            bpm: 72
+        };
+
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (!gameState.running) return;
+
+            if (e.code === 'KeyF') {
+                toggleFlashlight();
+            } else if (e.code === 'KeyQ') {
+                triggerSonarPing();
+            } else if (e.code === 'KeyC') {
+                player.crouching = !player.crouching;
+                document.getElementById('stance-label').textContent = player.crouching ? 'CROUCHING (SILENT)' : 'STANDING';
+            } else if ((e.code === 'Escape' || e.code === 'KeyE') && gameState.readingLore) {
+                closeLoreModal();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        function toggleFlashlight() {
+            if (player.battery <= 1 && !player.flashlightOn) return;
+            player.flashlightOn = !player.flashlightOn;
+            audio.playFlashlightClick();
+            updateFlashlightUI();
+        }
+
+        function updateFlashlightUI() {
+            const label = document.getElementById('flashlight-state');
+            if (player.flashlightOn) {
+                label.textContent = 'ACTIVE (HIGH VISIBILITY)';
+                label.className = 'text-amber-400';
+            } else {
+                label.textContent = 'OFF (STEALTH / RECHARGING)';
+                label.className = 'text-emerald-400';
+            }
+        }
+
+        function triggerSonarPing() {
+            if (gameState.sonarCooldown > 0) return;
+            gameState.sonarCooldown = 8.0;
+            gameState.sonarActiveTimer = 5.0;
+            audio.playSonarPing();
+            showRadioMessage("ULTRASONIC PING EMITTED — SUBJECT-0 ALERTED TO YOUR SECTOR", 3500);
+            subjectZero.triggerSoundAlert(player.x, player.z, 9.5);
+        }
+
+        // Pointer Lock Mouse Look
+        document.addEventListener('mousemove', (e) => {
+            if (!gameState.running || gameState.readingLore) return;
+            if (document.pointerLockElement === canvas) {
+                const sensitivity = 0.0021;
+                player.yaw -= e.movementX * sensitivity;
+                player.pitch -= e.movementY * sensitivity;
+                player.pitch = Math.max(-Math.PI / 2.25, Math.min(Math.PI / 2.25, player.pitch));
+            }
+        });
+
+        canvas.addEventListener('click', () => {
+            if (gameState.running && !gameState.readingLore && document.pointerLockElement !== canvas) {
+                canvas.requestPointerLock?.();
+            }
+        });
+
+        // Mobile / Touch Detection & Virtual Controls
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const touchInput = { moveX: 0, moveZ: 0, sprint: false, interact: false };
+        if (isTouchDevice) {
+            document.getElementById('touch-controls').classList.remove('hidden');
+            document.getElementById('touch-controls').classList.add('flex');
+        }
+
+        // Virtual Joystick Handler
+        const joyZone = document.getElementById('joystick-zone');
+        const joyKnob = document.getElementById('joystick-knob');
+        let joyActive = false;
+
+        joyZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            joyActive = true;
+        }, { passive: false });
+
+        joyZone.addEventListener('touchmove', (e) => {
+            if (!joyActive) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = joyZone.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            let dx = touch.clientX - cx;
+            let dy = touch.clientY - cy;
+            const maxR = rect.width / 2 - 16;
+            const dist = Math.hypot(dx, dy);
+            if (dist > maxR) {
+                dx = (dx / dist) * maxR;
+                dy = (dy / dist) * maxR;
+            }
+            joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            touchInput.moveX = dx / maxR;
+            touchInput.moveZ = dy / maxR;
+        }, { passive: false });
+
+        const resetJoystick = () => {
+            joyActive = false;
+            joyKnob.style.transform = `translate(0px, 0px)`;
+            touchInput.moveX = 0;
+            touchInput.moveZ = 0;
+        };
+        joyZone.addEventListener('touchend', resetJoystick);
+        joyZone.addEventListener('touchcancel', resetJoystick);
+
+        // Touch Look on Main Canvas
+        let lastTouchX = null;
+        let lastTouchY = null;
+        canvas.addEventListener('touchstart', (e) => {
+            const t = e.touches[0];
+            lastTouchX = t.clientX;
+            lastTouchY = t.clientY;
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!gameState.running || lastTouchX === null) return;
+            const t = e.touches[0];
+            const dx = t.clientX - lastTouchX;
+            const dy = t.clientY - lastTouchY;
+            lastTouchX = t.clientX;
+            lastTouchY = t.clientY;
+            player.yaw -= dx * 0.005;
+            player.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, player.pitch - dy * 0.005));
+        }, { passive: true });
+
+        document.getElementById('btn-touch-flash').addEventListener('touchstart', (e) => { e.preventDefault(); toggleFlashlight(); });
+        document.getElementById('btn-touch-sonar').addEventListener('touchstart', (e) => { e.preventDefault(); triggerSonarPing(); });
+        document.getElementById('btn-touch-sprint').addEventListener('touchstart', (e) => { e.preventDefault(); touchInput.sprint = !touchInput.sprint; });
+        const btnTouchInteract = document.getElementById('btn-touch-interact');
+        btnTouchInteract.addEventListener('touchstart', (e) => { e.preventDefault(); touchInput.interact = true; });
+        btnTouchInteract.addEventListener('touchend', (e) => { e.preventDefault(); touchInput.interact = false; });
+
+        /**************************************************************************
+         * 9. HUD RADAR, COMPASS & RADIO FEEDBACK
+         **************************************************************************/
+        const radarCanvas = document.getElementById('radar-canvas');
+        const radarCtx = radarCanvas.getContext('2d');
+        const compassCanvas = document.getElementById('compass-canvas');
+        const compassCtx = compassCanvas.getContext('2d');
+        const grainCanvas = document.getElementById('grain-canvas');
+        const grainCtx = grainCanvas.getContext('2d');
+
+        let radioTimeout = null;
+        function showRadioMessage(msg, duration = 4000) {
+            const el = document.getElementById('radio-message');
+            el.textContent = msg;
+            el.style.opacity = '1';
+            if (radioTimeout) clearTimeout(radioTimeout);
+            radioTimeout = setTimeout(() => {
+                el.style.opacity = '0';
+            }, duration);
+        }
+
+        function openLoreModal(logIndex) {
+            gameState.readingLore = true;
+            document.exitPointerLock?.();
+            const log = LORE_LOGS[logIndex];
+            document.getElementById('lore-title').textContent = log.title;
+            document.getElementById('lore-body').textContent = log.body;
+            const modal = document.getElementById('lore-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeLoreModal() {
+            gameState.readingLore = false;
+            const modal = document.getElementById('lore-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            if (!isTouchDevice) canvas.requestPointerLock?.();
+        }
+        document.getElementById('btn-close-lore').addEventListener('click', closeLoreModal);
+
+        function drawRadarAndCompass(time) {
+            // 1. Circular Tactical Sonar Map
+            const w = radarCanvas.width;
+            const h = radarCanvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+            radarCtx.clearRect(0, 0, w, h);
+
+            // Grid rings
+            radarCtx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+            radarCtx.lineWidth = 1;
+            radarCtx.beginPath(); radarCtx.arc(cx, cy, 24, 0, Math.PI * 2); radarCtx.stroke();
+            radarCtx.beginPath(); radarCtx.arc(cx, cy, 48, 0, Math.PI * 2); radarCtx.stroke();
+
+            // Rotating sweep line
+            const sweepAngle = (time * 2.2) % (Math.PI * 2);
+            radarCtx.strokeStyle = 'rgba(52, 211, 153, 0.55)';
+            radarCtx.beginPath();
+            radarCtx.moveTo(cx, cy);
+            radarCtx.lineTo(cx + Math.cos(sweepAngle) * 54, cy + Math.sin(sweepAngle) * 54);
+            radarCtx.stroke();
+
+            const scale = 1.65; // World meters to radar pixels
+
+            // Plot nearby walls faintly
+            const pGrid = worldToGrid(player.x, player.z);
+            radarCtx.fillStyle = 'rgba(71, 85, 105, 0.45)';
+            for (let dz = -6; dz <= 6; dz++) {
+                for (let dx = -6; dx <= 6; dx++) {
+                    const gx = pGrid.gx + dx;
+                    const gz = pGrid.gz + dz;
+                    if (!isCellWalkable(gx, gz)) {
+                        const wp = gridToWorld(gx, gz);
+                        const relX = wp.x - player.x;
+                        const relZ = wp.z - player.z;
+                        // Rotate relative to player yaw
+                        const rx = relX * Math.cos(-player.yaw) - relZ * Math.sin(-player.yaw);
+                        const rz = relX * Math.sin(-player.yaw) + relZ * Math.cos(-player.yaw);
+                        if (Math.hypot(rx, rz) * scale < 52) {
+                            radarCtx.fillRect(cx + rx * scale - 2, cy + rz * scale - 2, 4, 4);
+                        }
+                    }
+                }
+            }
+
+            // Plot Resonator Nodes (Always visible when Sonar Ping active, or directional blip)
+            resonatorNodes.forEach(node => {
+                if (node.purged) return;
+                const relX = node.x - player.x;
+                const relZ = node.z - player.z;
+                const rx = relX * Math.cos(-player.yaw) - relZ * Math.sin(-player.yaw);
+                const rz = relX * Math.sin(-player.yaw) + relZ * Math.cos(-player.yaw);
+                const distPx = Math.hypot(rx, rz) * scale;
+                const clampedDist = Math.min(50, distPx);
+                const ang = Math.atan2(rz, rx);
+                const px = cx + Math.cos(ang) * ( gameState.sonarActiveTimer > 0 ? clampedDist : Math.min(48, distPx) );
+                const py = cy + Math.sin(ang) * ( gameState.sonarActiveTimer > 0 ? clampedDist : Math.min(48, distPx) );
+
+                if (distPx < 48 || gameState.sonarActiveTimer > 0) {
+                    radarCtx.fillStyle = '#f87171';
+                    radarCtx.beginPath();
+                    radarCtx.arc(px, py, gameState.sonarActiveTimer > 0 ? 3.5 : 2.5, 0, Math.PI * 2);
+                    radarCtx.fill();
+                }
+            });
+
+            // Plot Central Ascent Lift when all nodes purged
+            if (gameState.purgedCount >= gameState.totalNodes) {
+                const relX = liftZone.x - player.x;
+                const relZ = liftZone.z - player.z;
+                const rx = relX * Math.cos(-player.yaw) - relZ * Math.sin(-player.yaw);
+                const rz = relX * Math.sin(-player.yaw) + relZ * Math.cos(-player.yaw);
+                const ang = Math.atan2(rz, rx);
+                const distPx = Math.min(48, Math.hypot(rx, rz) * scale);
+                radarCtx.fillStyle = '#fbbf24';
+                radarCtx.beginPath();
+                radarCtx.arc(cx + Math.cos(ang) * distPx, cy + Math.sin(ang) * distPx, 4, 0, Math.PI * 2);
+                radarCtx.fill();
+            }
+
+            // Plot Subject-0 on radar if moving close or Sonar Active
+            const mRelX = subjectZero.x - player.x;
+            const mRelZ = subjectZero.z - player.z;
+            const mDist = Math.hypot(mRelX, mRelZ);
+            if (mDist < 18 || gameState.sonarActiveTimer > 0) {
+                const rx = mRelX * Math.cos(-player.yaw) - mRelZ * Math.sin(-player.yaw);
+                const rz = mRelX * Math.sin(-player.yaw) + mRelZ * Math.cos(-player.yaw);
+                const ang = Math.atan2(rz, rx);
+                const distPx = Math.min(50, Math.hypot(rx, rz) * scale);
+                radarCtx.fillStyle = '#ef4444';
+                radarCtx.beginPath();
+                radarCtx.arc(cx + Math.cos(ang) * distPx, cy + Math.sin(ang) * distPx, 4, 0, Math.PI * 2);
+                radarCtx.fill();
+            }
+
+            // Player center marker
+            radarCtx.fillStyle = '#34d399';
+            radarCtx.beginPath();
+            radarCtx.arc(cx, cy, 3, 0, Math.PI * 2);
+            radarCtx.fill();
+
+            // 2. Top Compass Strip
+            if (compassCanvas.offsetParent !== null) {
+                const cw = compassCanvas.width;
+                const ch = compassCanvas.height;
+                compassCtx.clearRect(0, 0, cw, ch);
+
+                // Draw Node Bearings on Compass
+                resonatorNodes.forEach(node => {
+                    if (node.purged) return;
+                    const worldAng = Math.atan2(-(node.x - player.x), -(node.z - player.z));
+                    let diff = worldAng - player.yaw;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    if (Math.abs(diff) < Math.PI / 2) {
+                        const bx = cw / 2 - (diff / (Math.PI / 2)) * (cw / 2 - 12);
+                        compassCtx.fillStyle = '#ef4444';
+                        compassCtx.beginPath();
+                        compassCtx.arc(bx, ch / 2, 4, 0, Math.PI * 2);
+                        compassCtx.fill();
+                    }
+                });
+
+                // Center tick
+                compassCtx.strokeStyle = '#4ade80';
+                compassCtx.beginPath();
+                compassCtx.moveTo(cw / 2, 2);
+                compassCtx.lineTo(cw / 2, ch - 2);
+                compassCtx.stroke();
+            }
+        }
+
+        // Film Grain Animation
+        let grainFrame = 0;
+        function updateFilmGrain() {
+            grainFrame++;
+            if (grainFrame % 3 !== 0) return;
+            const w = grainCanvas.width;
+            const h = grainCanvas.height;
+            const imgData = grainCtx.createImageData(w, h);
+            const buf = new Uint32Array(imgData.data.buffer);
+            for (let i = 0; i < buf.length; i += 2) {
+                const v = (Math.random() * 255) | 0;
+                buf[i] = (255 << 24) | (v << 16) | (v << 8) | v;
+            }
+            grainCtx.putImageData(imgData, 0, 0);
+        }
+
+        /**************************************************************************
+         * 10. GAME LIFECYCLE (START, RESET, WIN, JUMPSCARE DEATH)
+         **************************************************************************/
+        function startGame() {
+            audio.init();
+            audio.resume();
+
+            // Reset player
+            player.x = liftZone.x;
+            player.z = liftZone.z;
+            player.yaw = 0;
+            player.pitch = 0;
+            player.stamina = 100;
+            player.battery = 100;
+            player.flashlightOn = true;
+            player.crouching = false;
+            updateFlashlightUI();
+
+            // Reset Resonator Nodes
+            gameState.purgedCount = 0;
+            gameState.sonarCooldown = 0;
+            gameState.sonarActiveTimer = 0;
+            gameState.readingLore = false;
+            resonatorNodes.forEach(n => {
+                n.purged = false;
+                n.progress = 0;
+                n.coreMat.color.setHex(0xdc2626);
+                n.coreMat.emissive.setHex(0x991b1b);
+                n.nodeLight.color.setHex(0xef4444);
+                n.tendrils.visible = true;
+            });
+
+            document.getElementById('nodes-count').textContent = `0 / ${gameState.totalNodes}`;
+            document.getElementById('objective-text').innerHTML = `PURGE BIO-RESONATORS: <span id="nodes-count" class="text-emerald-400">0 / ${gameState.totalNodes}</span>`;
+            document.getElementById('sub-objective').textContent = 'Follow crimson beacons or use Sonar [Q] to locate nodes.';
+
+            // Reset Enemy
+            subjectZero.reset(enemySpawnPos);
+
+            // Switch UI Screens
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('end-screen').classList.add('hidden');
+            document.getElementById('end-screen').classList.remove('flex');
+            const hud = document.getElementById('hud');
+            hud.classList.remove('hidden');
+            hud.classList.add('flex');
+
+            gameState.running = true;
+            gameState.gameOver = false;
+            gameState.startTime = performance.now();
+
+            if (!isTouchDevice) {
+                canvas.requestPointerLock?.();
+            }
+
+            showRadioMessage("DESCENT COMPLETE. LOCATE AND PURGE ALL 5 BIO-RESONATORS.", 5000);
+        }
+
+        function triggerEndGame(escaped) {
+            gameState.running = false;
+            gameState.gameOver = true;
+            document.exitPointerLock?.();
+
+            const elapsedSec = Math.floor((performance.now() - gameState.startTime) / 1000);
+            const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+            const secs = String(elapsedSec % 60).padStart(2, '0');
+
+            document.getElementById('stat-nodes').textContent = `${gameState.purgedCount}/${gameState.totalNodes}`;
+            document.getElementById('stat-time').textContent = `${mins}:${secs}`;
+
+            const endScreen = document.getElementById('end-screen');
+            const title = document.getElementById('end-title');
+            const sub = document.getElementById('end-subtitle');
+            const desc = document.getElementById('end-desc');
+
+            if (escaped) {
+                audio.playNodeComplete();
+                sub.textContent = "QUARANTINE INTERLOCK OVERRIDDEN";
+                sub.className = "text-xs tracking-[0.25em] text-emerald-400 uppercase mb-2";
+                title.textContent = "ASCENT ACHIEVED";
+                desc.textContent = "You purged the acoustic resonators and sealed the borehole behind the Ascent Cage. Below the basalt crust, Subject-0 waits in the dark.";
+            } else {
+                audio.playJumpscare();
+                sub.textContent = "TELEMETRY TERMINATED // KIA";
+                sub.className = "text-xs tracking-[0.25em] text-red-500 uppercase mb-2";
+                title.textContent = "ASSIMILATED";
+                desc.textContent = "Subject-0 tracked your acoustic signature through the dark corridors. Your voice now echoes within the Chorus of Flesh.";
+            }
+
+            endScreen.classList.remove('hidden');
+            endScreen.classList.add('flex');
+        }
+
+        document.getElementById('btn-start-game').addEventListener('click', startGame);
+        document.getElementById('btn-restart').addEventListener('click', startGame);
+
+        /**************************************************************************
+         * 11. MAIN GAME LOOP & REAL-TIME UPDATE
+         **************************************************************************/
+        let lastFrameTime = performance.now();
+
+        function animate(now) {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+            const timeSec = now * 0.001;
+
+            updateFilmGrain();
+
+            // Flicker corridor lights & rotate resonator cores even on menu backdrop
+            flickeringLights.forEach(fl => {
+                const n = Math.sin(timeSec * 14 + fl.seed) * Math.cos(timeSec * 29 + fl.seed);
+                fl.light.intensity = n > 0.65 ? 0.1 : fl.baseIntensity + n * 0.2;
+            });
+
+            resonatorNodes.forEach(node => {
+                node.core.rotation.y += dt * (node.purged ? 0.5 : 2.2);
+                node.ring1.rotation.x += dt * 1.4;
+                node.ring1.rotation.y += dt * 1.1;
+            });
+
+            if (!gameState.running || gameState.readingLore) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            // 1. Player Movement & Stamina
+            let moveForward = (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) - (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0) - touchInput.moveZ;
+            let moveRight = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0) + touchInput.moveX;
+
+            const inputLen = Math.hypot(moveForward, moveRight);
+            if (inputLen > 1) {
+                moveForward /= inputLen;
+                moveRight /= inputLen;
+            }
+
+            player.moving = inputLen > 0.08;
+            const wantsSprint = (keys['ShiftLeft'] || keys['ShiftRight'] || touchInput.sprint) && !player.crouching;
+            player.sprinting = wantsSprint && player.moving && player.stamina > 5;
+
+            if (player.sprinting) {
+                player.stamina = Math.max(0, player.stamina - 24 * dt);
+            } else {
+                player.stamina = Math.min(100, player.stamina + (player.moving ? 9 : 18) * dt);
+            }
+            document.getElementById('stamina-bar').style.width = `${player.stamina}%`;
+
+            // Speed based on stance
+            let moveSpeed = 3.45;
+            if (player.sprinting) moveSpeed = 5.65;
+            else if (player.crouching) moveSpeed = 2.05;
+
+            const sinY = Math.sin(player.yaw);
+            const cosY = Math.cos(player.yaw);
+            const vx = (-sinY * moveForward + cosY * moveRight) * moveSpeed * dt;
+            const vz = (-cosY * moveForward - sinY * moveForward * 0 + (-sinY * moveRight)) * moveSpeed * dt;
+            // Exact orthogonal forward/right basis vectors:
+            const forwardX = -Math.sin(player.yaw);
+            const forwardZ = -Math.cos(player.yaw);
+            const rightX = Math.cos(player.yaw);
+            const rightZ = -Math.sin(player.yaw);
+
+            const stepX = (forwardX * moveForward + rightX * moveRight) * moveSpeed * dt;
+            const stepZ = (forwardZ * moveForward + rightZ * moveRight) * moveSpeed * dt;
+
+            // Resolve Sliding Wall Collision
+            const resolvedPos = resolveCircleCollision(player.x + stepX, player.z + stepZ, player.radius);
+            player.x = resolvedPos.x;
+            player.z = resolvedPos.z;
+
+            // Head Bobbing & Footstep Audio
+            const targetEyeHeight = player.crouching ? 1.05 : 1.7;
+            if (player.moving) {
+                const bobFreq = player.sprinting ? 13.5 : (player.crouching ? 6.5 : 9.2);
+                const bobAmp = player.sprinting ? 0.095 : (player.crouching ? 0.03 : 0.055);
+                player.headBobTimer += dt * bobFreq;
+                const bobOffset = Math.sin(player.headBobTimer) * bobAmp;
+                yawObject.position.y += ((targetEyeHeight + bobOffset) - yawObject.position.y) * 0.25;
+
+                player.stepAccum += dt * (player.sprinting ? 2.8 : (player.crouching ? 1.3 : 1.95));
+                if (player.stepAccum >= 1.0) {
+                    player.stepAccum = 0;
+                    audio.playFootstep(player.sprinting, player.crouching);
+                }
+            } else {
+                yawObject.position.y += (targetEyeHeight - yawObject.position.y) * 0.15;
+            }
+
+            yawObject.position.x = player.x;
+            yawObject.position.z = player.z;
+            yawObject.rotation.y = player.yaw;
+            pitchObject.rotation.x = player.pitch;
+
+            // 2. Flashlight Battery & Flicker Management
+            if (player.flashlightOn) {
+                player.battery = Math.max(0, player.battery - 2.4 * dt);
+                if (player.battery <= 0) {
+                    player.flashlightOn = false;
+                    audio.playFlashlightClick();
+                    updateFlashlightUI();
+                }
+            } else {
+                player.battery = Math.min(100, player.battery + 6.5 * dt);
+            }
+            document.getElementById('battery-bar').style.width = `${player.battery}%`;
+
+            const batteryFactor = player.battery < 18 ? (0.4 + Math.random() * 0.6) : 1.0;
+            flashlightMain.intensity = player.flashlightOn ? 3.2 * batteryFactor : 0;
+            flashlightSpill.intensity = player.flashlightOn ? 0.9 * batteryFactor : 0;
+
+            // 3. Sonar Cooldown
+            if (gameState.sonarCooldown > 0) {
+                gameState.sonarCooldown = Math.max(0, gameState.sonarCooldown - dt);
+                document.getElementById('sonar-status').textContent = `RECHARGING (${Math.ceil(gameState.sonarCooldown)}s)`;
+                document.getElementById('sonar-status').className = 'text-amber-400 font-bold';
+            } else {
+                document.getElementById('sonar-status').textContent = 'READY';
+                document.getElementById('sonar-status').className = 'text-emerald-400 font-bold';
+            }
+            if (gameState.sonarActiveTimer > 0) {
+                gameState.sonarActiveTimer = Math.max(0, gameState.sonarActiveTimer - dt);
+            }
+
+            // 4. Interaction with Resonator Nodes, Lore Terminals, and Extraction Lift
+            const interactPressed = keys['KeyE'] || touchInput.interact;
+            const promptEl = document.getElementById('interact-prompt');
+            const purgeContainer = document.getElementById('purge-bar-container');
+            const purgeFill = document.getElementById('purge-bar-fill');
+            const crosshairEl = document.getElementById('crosshair');
+
+            let activePrompt = null;
+            let purgingNode = null;
+
+            // Check Resonator Nodes
+            for (const node of resonatorNodes) {
+                if (node.purged) continue;
+                const d = Math.hypot(node.x - player.x, node.z - player.z);
+                if (d < 2.65) {
+                    purgingNode = node;
+                    activePrompt = `HOLD [E] TO PURGE BIO-RESONATOR (${Math.floor((node.progress / 3.2) * 100)}%)`;
+                    if (interactPressed) {
+                        node.progress += dt;
+                        audio.playPurgeTone(node.progress / 3.2);
+                        if (node.progress >= 3.2) {
+                            node.purged = true;
+                            node.coreMat.color.setHex(0x10b981);
+                            node.coreMat.emissive.setHex(0x059669);
+                            node.nodeLight.color.setHex(0x10b981);
+                            node.tendrils.visible = false;
+
+                            gameState.purgedCount++;
+                            audio.playNodeComplete();
+                            document.getElementById('nodes-count').textContent = `${gameState.purgedCount} / ${gameState.totalNodes}`;
+
+                            // Alert Subject-0 to investigate the newly purged node!
+                            subjectZero.triggerSoundAlert(node.x, node.z, 10.0);
+
+                            if (gameState.purgedCount >= gameState.totalNodes) {
+                                liftLight.color.setHex(0x10b981);
+                                liftLight.intensity = 2.5;
+                                document.getElementById('objective-text').innerHTML = `<span class="text-emerald-400 animate-pulse">RETURN TO CENTRAL ASCENT LIFT</span>`;
+                                document.getElementById('sub-objective').textContent = 'Quarantine interlock disengaged! Reach the center of the facility.';
+                                showRadioMessage("ALL RESONATORS PURGED! RETURN TO THE CENTRAL LIFT IMMEDIATELY!", 6000);
+                            } else {
+                                showRadioMessage(`RESONATOR PURGED (${gameState.purgedCount}/5) — ACOUSTIC SHOCKWAVE DETECTED BY SUBJECT-0`, 4000);
+                            }
+                        }
+                    } else {
+                        node.progress = Math.max(0, node.progress - dt * 0.8);
+                    }
+                    break;
+                }
+            }
+
+            // Check Lore Terminals
+            if (!purgingNode) {
+                for (const term of loreTerminals) {
+                    const d = Math.hypot(term.x - player.x, term.z - player.z);
+                    if (d < 2.3) {
+                        activePrompt = "PRESS [E] TO ACCESS TERMINAL LOG";
+                        if (interactPressed) {
+                            keys['KeyE'] = false;
+                            touchInput.interact = false;
+                            openLoreModal(term.logIndex);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Check Central Ascent Lift Extraction
+            const distToLift = Math.hypot(liftZone.x - player.x, liftZone.z - player.z);
+            if (gameState.purgedCount >= gameState.totalNodes && distToLift < 2.2) {
+                activePrompt = "PRESS [E] TO ENGAGE EMERGENCY ASCENT CAGE";
+                if (interactPressed) {
+                    triggerEndGame(true);
+                    return;
+                }
+            }
+
+            if (activePrompt) {
+                promptEl.textContent = activePrompt;
+                promptEl.classList.remove('hidden');
+                crosshairEl.classList.add('crosshair-active');
+            } else {
+                promptEl.classList.add('hidden');
+                crosshairEl.classList.remove('crosshair-active');
+            }
+
+            if (purgingNode && purgingNode.progress > 0 && !purgingNode.purged) {
+                purgeContainer.classList.remove('hidden');
+                purgeFill.style.width = `${Math.min(100, (purgingNode.progress / 3.2) * 100)}%`;
+            } else {
+                purgeContainer.classList.add('hidden');
+            }
+
+            // 5. Update Subject-0 AI & Evaluate Proximity Terror
+            const enemyDist = subjectZero.update(dt, {
+                x: player.x,
+                z: player.z,
+                flashlightOn: player.flashlightOn,
+                sprinting: player.sprinting,
+                crouching: player.crouching,
+                moving: player.moving,
+                purgedCount: gameState.purgedCount
+            });
+
+            // Heartbeat & Threat Status UI
+            const proximityFactor = Math.max(0, 1 - enemyDist / 22);
+            const targetBpm = Math.round(72 + proximityFactor * 75 + (subjectZero.state === 'CHASE' ? 35 : 0));
+            player.bpm += (targetBpm - player.bpm) * dt * 4;
+            const displayBpm = Math.round(player.bpm);
+            const bpmEl = document.getElementById('bpm-text');
+            bpmEl.textContent = displayBpm;
+
+            const threatEl = document.getElementById('threat-status');
+            const bloodOverlay = document.getElementById('blood-overlay');
+
+            if (subjectZero.state === 'CHASE') {
+                threatEl.textContent = 'HUNTING YOU';
+                threatEl.className = 'text-xs sm:text-sm font-bold text-red-500 animate-pulse tracking-wider';
+                bpmEl.className = 'text-xl sm:text-2xl font-bold text-red-500';
+                bloodOverlay.style.opacity = String(0.35 + Math.sin(timeSec * 8) * 0.2);
+                bloodOverlay.style.background = 'radial-gradient(circle at center, transparent 25%, rgba(165, 10, 10, 0.65) 100%)';
+            } else if (subjectZero.state === 'INVESTIGATE') {
+                threatEl.textContent = 'SEARCHING SECTOR';
+                threatEl.className = 'text-xs sm:text-sm font-bold text-amber-400 tracking-wider';
+                bpmEl.className = 'text-xl sm:text-2xl font-bold text-amber-400';
+                bloodOverlay.style.opacity = String(proximityFactor * 0.35);
+            } else {
+                threatEl.textContent = enemyDist < 14 ? 'NEARBY' : 'STALKING';
+                threatEl.className = 'text-xs sm:text-sm font-bold text-emerald-400 tracking-wider';
+                bpmEl.className = 'text-xl sm:text-2xl font-bold text-emerald-400';
+                bloodOverlay.style.opacity = String(proximityFactor * 0.25);
+            }
+
+            audio.playHeartbeat(displayBpm);
+
+            // Check Lethal Capture Distance (with Jumpscare Camera Snap)
+            if (enemyDist < 1.28) {
+                // Snap camera toward Subject-0's skull before showing death screen
+                const angleToMonster = Math.atan2(-(subjectZero.x - player.x), -(subjectZero.z - player.z));
+                yawObject.rotation.y = angleToMonster;
+                pitchObject.rotation.x = 0.08;
+                renderer.render(scene, camera);
+                triggerEndGame(false);
+                return;
+            }
+
+            // 6. Update Tactical Radar & Compass
+            drawRadarAndCompass(timeSec);
+
+            renderer.render(scene, camera);
+        }
+
+        // Responsive Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.onload = () => {
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+</html>
